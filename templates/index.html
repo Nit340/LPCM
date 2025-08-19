@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Production Counter</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    .connected-pulse {
+      animation: pulse 2s infinite;
+    }
+    .metric-card {
+      transition: all 0.3s ease;
+      transform: translateY(0);
+      cursor: pointer;
+    }
+    .metric-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    }
+    .log-row {
+      transition: background-color 0.2s ease;
+    }
+    .log-row:hover {
+      background-color: #f8fafc;
+    }
+    .chart-container {
+      position: relative;
+      height: 300px;
+      width: 100%;
+    }
+  </style>
+</head>
+<body class="bg-gray-50">
+  <!-- Header with gradient -->
+  <header class="bg-gradient-to-r from-blue-600 to-blue-800 text-white p-4 text-center text-2xl font-bold shadow-md">
+    <div class="flex items-center justify-center">
+      <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2z" />
+      </svg>
+      <span>Live Production Count Monitor</span>
+    </div>
+  </header>
+
+  <!-- Connect Form with card styling -->
+  <div class="p-4">
+    <div class="bg-white rounded-xl shadow-md p-4 mb-6 border border-gray-100">
+      <div class="flex flex-wrap gap-4 items-end">
+        <div class="flex-1 min-w-[200px]">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Broker IP</label>
+          <input id="broker" placeholder="127.0.0.1" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        <div class="flex-1 min-w-[120px]">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Port</label>
+          <input id="port" placeholder="1883" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        <div class="flex-1 min-w-[200px]">
+          <label class="block text-sm font-medium text-gray-700 mb-1">Topic</label>
+          <input id="topic" placeholder="production/metrics" class="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+        </div>
+        <div class="flex gap-2">
+          <button onclick="connectMQTT()" class="bg-gradient-to-r from-green-500 to-green-600 text-white px-4 py-2 rounded-lg hover:from-green-600 hover:to-green-700 transition-all shadow-md hover:shadow-lg flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clip-rule="evenodd" />
+            </svg>
+            Connect
+          </button>
+          <button onclick="disconnectMQTT()" class="bg-gradient-to-r from-red-500 to-red-600 text-white px-4 py-2 rounded-lg hover:from-red-600 hover:to-red-700 transition-all shadow-md hover:shadow-lg flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+              <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+            </svg>
+            Disconnect
+          </button>
+        </div>
+      </div>
+      <div id="connection-status" class="mt-2 text-sm hidden">
+        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+          Status: <span id="status-text" class="ml-1">Disconnected</span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Metric Cards with color variations -->
+  <div id="metrics" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 p-4">
+    <!-- Cards will be inserted here by JavaScript -->
+  </div>
+
+  <!-- Production Charts -->
+  <div class="p-4">
+    <div class="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+      <div class="p-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
+        <h2 class="text-xl font-bold text-gray-800 flex items-center">
+          <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+          </svg>
+          Production Analytics
+        </h2>
+      </div>
+      <div class="p-4">
+        <div id="overall-chart-container" class="chart-container">
+          <canvas id="overallChart"></canvas>
+        </div>
+        <div id="individual-chart-container" class="chart-container mt-6 hidden">
+          <canvas id="individualChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Enhanced Audit Log with improved styling -->
+  <div class="p-4">
+    <div class="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+      <div class="p-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-gray-100">
+        <div class="flex justify-between items-center">
+          <h2 class="text-xl font-bold text-gray-800 flex items-center">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mr-2 text-blue-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Production Log
+          </h2>
+          <button onclick="clearLog()" class="bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-lg text-sm transition-all flex items-center shadow-sm hover:shadow">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+            Clear Log
+          </button>
+        </div>
+      </div>
+      
+      <div class="overflow-x-auto">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Time</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-1/6">Topic</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-2/3">Payload</th>
+            </tr>
+          </thead>
+          <tbody id="log" class="bg-white divide-y divide-gray-200"></tbody>
+        </table>
+      </div>
+      
+      <!-- Pagination Controls with improved styling -->
+      <div class="bg-gray-50 px-4 py-3 flex items-center justify-between border-t border-gray-200 sm:px-6">
+        <div class="hidden sm:flex-1 sm:flex sm:items-center sm:justify-between">
+          <div>
+            <p id="pagination-info" class="text-sm text-gray-700"></p>
+          </div>
+          <div>
+            <nav class="relative z-0 inline-flex rounded-md shadow-sm -space-x-px">
+              <button onclick="prevPage()" id="prev-btn" class="relative inline-flex items-center px-3 py-2 rounded-l-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                <span class="sr-only">Previous</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+                </svg>
+              </button>
+              <button onclick="nextPage()" id="next-btn" class="relative inline-flex items-center px-3 py-2 rounded-r-md border border-gray-300 bg-white text-sm font-medium text-gray-500 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                <span class="sr-only">Next</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                  <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+                </svg>
+              </button>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    let isConnected = false;
+    let metricsInterval;
+    let messagesInterval;
+    let allMessages = [];
+    let currentPage = 1;
+    const logsPerPage = 15;
+    const machineColors = [
+      'from-blue-500 to-blue-600',
+      'from-green-500 to-green-600',
+      'from-purple-500 to-purple-600',
+      'from-yellow-500 to-yellow-600',
+      'from-red-500 to-red-600',
+      'from-indigo-500 to-indigo-600',
+      'from-pink-500 to-pink-600',
+      'from-teal-500 to-teal-600'
+    ];
+    
+    // Chart variables
+    let overallChart;
+    let individualChart;
+    let productionData = {};
+    let selectedProduction = null;
+    
+    // Initialize production data
+    for (let i = 1; i <= 8; i++) {
+      productionData[`production_${i}`] = {
+        values: [],
+        timestamps: []
+      };
+    }
+
+    async function connectMQTT() {
+      if (isConnected) return;
+      
+      const broker = document.getElementById("broker").value || "127.0.0.1";
+      const port = document.getElementById("port").value || 1883;
+      const topic = document.getElementById("topic").value;
+      
+      // Show loading state
+      const connectBtn = document.querySelector('button[onclick="connectMQTT()"]');
+      connectBtn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg> Connecting...`;
+      connectBtn.disabled = true;
+      
+      try {
+        const res = await fetch("/connect", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({broker, port, topic})
+        });
+        console.log(await res.json());
+        
+        isConnected = true;
+        updateConnectionStatus(true);
+        // Start fetching data only after connection
+        metricsInterval = setInterval(fetchMetrics, 1000);
+        messagesInterval = setInterval(fetchMessages, 1000);
+        
+        // Initialize charts
+        initCharts();
+      } catch (error) {
+        console.error("Connection failed:", error);
+        updateConnectionStatus(false, "Connection failed");
+      } finally {
+        connectBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-8.707l-3-3a1 1 0 00-1.414 0l-3 3a1 1 0 001.414 1.414L9 9.414V13a1 1 0 102 0V9.414l1.293 1.293a1 1 0 001.414-1.414z" clip-rule="evenodd" />
+        </svg> Connect`;
+        connectBtn.disabled = false;
+      }
+    }
+
+    function initCharts() {
+      // Destroy existing charts if they exist
+      if (overallChart) {
+        overallChart.destroy();
+      }
+      if (individualChart) {
+        individualChart.destroy();
+      }
+      
+      const overallCtx = document.getElementById('overallChart').getContext('2d');
+      const individualCtx = document.getElementById('individualChart').getContext('2d');
+      
+      // Overall production chart
+      overallChart = new Chart(overallCtx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: []
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Overall Production Metrics',
+              font: {
+                size: 16
+              }
+            },
+            legend: {
+              position: 'top',
+            },
+            tooltip: {
+              mode: 'index',
+              intersect: false
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Production Count'
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Time'
+              }
+            }
+          },
+          interaction: {
+            mode: 'nearest',
+            axis: 'x',
+            intersect: false
+          }
+        }
+      });
+      
+      // Individual production chart
+      individualChart = new Chart(individualCtx, {
+        type: 'line',
+        data: {
+          labels: [],
+          datasets: [{
+            label: '',
+            data: [],
+            borderColor: 'rgb(75, 192, 192)',
+            tension: 0.1,
+            fill: false
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            title: {
+              display: true,
+              text: 'Individual Production Metrics',
+              font: {
+                size: 16
+              }
+            },
+            legend: {
+              display: false
+            },
+            tooltip: {
+              mode: 'index',
+              intersect: false
+            }
+          },
+          scales: {
+            y: {
+              beginAtZero: true,
+              title: {
+                display: true,
+                text: 'Production Count'
+              }
+            },
+            x: {
+              title: {
+                display: true,
+                text: 'Time'
+              }
+            }
+          },
+          interaction: {
+            mode: 'nearest',
+            axis: 'x',
+            intersect: false
+          }
+        }
+      });
+    }
+
+    function updateCharts() {
+      if (!overallChart || !individualChart) return;
+      
+      // Update overall chart
+      const labels = [];
+      const datasets = [];
+      
+      // Get the most recent timestamps (use the first production line that has data)
+      const referenceProd = Object.keys(productionData).find(key => productionData[key].timestamps.length > 0);
+      if (referenceProd) {
+        labels.push(...productionData[referenceProd].timestamps);
+      }
+      
+      // Create dataset for each production line
+      Object.keys(productionData).forEach((prod, index) => {
+        if (productionData[prod].values.length > 0) {
+          datasets.push({
+            label: prod.replace('_', ' '),
+            data: productionData[prod].values,
+            borderColor: getComputedStyle(document.documentElement).getPropertyValue(`--color-${['blue', 'green', 'purple', 'yellow', 'red', 'indigo', 'pink', 'teal'][index]}-500`),
+            backgroundColor: getComputedStyle(document.documentElement).getPropertyValue(`--color-${['blue', 'green', 'purple', 'yellow', 'red', 'indigo', 'pink', 'teal'][index]}-100`),
+            borderWidth: 2,
+            tension: 0.1,
+            fill: false
+          });
+        }
+      });
+      
+      overallChart.data.labels = labels;
+      overallChart.data.datasets = datasets;
+      overallChart.update();
+      
+      // Update individual chart if a production is selected
+      if (selectedProduction) {
+        const prodData = productionData[selectedProduction];
+        individualChart.data.labels = prodData.timestamps;
+        individualChart.data.datasets[0].data = prodData.values;
+        individualChart.data.datasets[0].label = selectedProduction.replace('_', ' ');
+        individualChart.options.plugins.title.text = `${selectedProduction.replace('_', ' ')} Metrics`;
+        individualChart.update();
+      }
+    }
+
+    async function disconnectMQTT() {
+      if (!isConnected) return;
+      
+      const disconnectBtn = document.querySelector('button[onclick="disconnectMQTT()"]');
+      disconnectBtn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+      </svg> Disconnecting...`;
+      disconnectBtn.disabled = true;
+      
+      try {
+        const res = await fetch("/disconnect", {method: "POST"});
+        console.log(await res.json());
+        
+        isConnected = false;
+        updateConnectionStatus(false);
+        // Stop fetching data
+        clearInterval(metricsInterval);
+        clearInterval(messagesInterval);
+      } catch (error) {
+        console.error("Disconnection failed:", error);
+      } finally {
+        disconnectBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-1" viewBox="0 0 20 20" fill="currentColor">
+          <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
+        </svg> Disconnect`;
+        disconnectBtn.disabled = false;
+      }
+    }
+
+    function updateConnectionStatus(connected, message = "") {
+      const statusElement = document.getElementById("connection-status");
+      const statusText = document.getElementById("status-text");
+      
+      statusElement.classList.remove("hidden");
+      
+      if (connected) {
+        statusText.textContent = "Connected";
+        statusElement.innerHTML = `
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            <span class="flex h-2 w-2 relative mr-1">
+              <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+            </span>
+            Status: ${statusText.textContent}
+          </span>`;
+      } else {
+        statusText.textContent = message || "Disconnected";
+        statusElement.innerHTML = `
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            <span class="flex h-2 w-2 relative mr-1">
+              <span class="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+            </span>
+            Status: ${statusText.textContent}
+          </span>`;
+      }
+    }
+
+    function clearLog() {
+      allMessages = [];
+      currentPage = 1;
+      renderLog();
+      updatePagination();
+      
+      // Show confirmation toast
+      showToast("Log cleared successfully", "success");
+    }
+
+    function showToast(message, type = "info") {
+      const toast = document.createElement("div");
+      const colors = {
+        success: "bg-green-500",
+        error: "bg-red-500",
+        info: "bg-blue-500",
+        warning: "bg-yellow-500"
+      };
+      
+      toast.className = `fixed bottom-4 right-4 text-white px-4 py-2 rounded-lg shadow-lg ${colors[type]} transition-all transform translate-y-2 opacity-0`;
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      
+      // Animate in
+      setTimeout(() => {
+        toast.classList.remove("translate-y-2", "opacity-0");
+        toast.classList.add("translate-y-0", "opacity-100");
+      }, 10);
+      
+      // Animate out after 3 seconds
+      setTimeout(() => {
+        toast.classList.add("translate-y-2", "opacity-0");
+        setTimeout(() => {
+          document.body.removeChild(toast);
+        }, 300);
+      }, 3000);
+    }
+
+    function renderLog() {
+      const table = document.getElementById("log");
+      table.innerHTML = "";
+      
+      const startIndex = (currentPage - 1) * logsPerPage;
+      const paginatedMessages = allMessages.slice().reverse().slice(startIndex, startIndex + logsPerPage);
+      
+      if (paginatedMessages.length === 0) {
+        table.innerHTML = `
+          <tr>
+            <td colspan="3" class="px-6 py-4 text-center text-sm text-gray-500">No logs available</td>
+          </tr>`;
+        return;
+      }
+      
+      paginatedMessages.forEach((msg, index) => {
+        let payload = msg.payload;
+        try {
+          // Try to pretty-print JSON if payload is JSON
+          const jsonData = JSON.parse(msg.payload);
+          payload = JSON.stringify(jsonData, null, 2);
+        } catch (e) {
+          // If not JSON, use as-is
+        }
+        
+        let row = document.createElement("tr");
+        row.className = `log-row ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`;
+        row.innerHTML = `
+          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${msg.time}</td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 truncate max-w-xs">
+            <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">${msg.topic}</span>
+          </td>
+          <td class="px-6 py-4 text-sm text-gray-500">
+            <pre class="whitespace-pre-wrap break-all font-mono bg-gray-50 p-2 rounded border border-gray-200">${payload}</pre>
+          </td>`;
+        table.appendChild(row);
+      });
+    }
+
+    function updatePagination() {
+      const totalPages = Math.ceil(allMessages.length / logsPerPage);
+      document.getElementById("pagination-info").textContent = 
+        `Showing page ${currentPage} of ${totalPages} (${allMessages.length} total logs)`;
+      
+      const prevBtn = document.getElementById("prev-btn");
+      const nextBtn = document.getElementById("next-btn");
+      
+      prevBtn.disabled = currentPage === 1;
+      nextBtn.disabled = currentPage === totalPages || totalPages === 0;
+      
+      if (prevBtn.disabled) {
+        prevBtn.classList.add("opacity-50", "cursor-not-allowed");
+      } else {
+        prevBtn.classList.remove("opacity-50", "cursor-not-allowed");
+      }
+      
+      if (nextBtn.disabled) {
+        nextBtn.classList.add("opacity-50", "cursor-not-allowed");
+      } else {
+        nextBtn.classList.remove("opacity-50", "cursor-not-allowed");
+      }
+    }
+
+    function prevPage() {
+      if (currentPage > 1) {
+        currentPage--;
+        renderLog();
+        updatePagination();
+      }
+    }
+
+    function nextPage() {
+      const totalPages = Math.ceil(allMessages.length / logsPerPage);
+      if (currentPage < totalPages) {
+        currentPage++;
+        renderLog();
+        updatePagination();
+      }
+    }
+
+    async function fetchMetrics() {
+  if (!isConnected) return;
+  
+  try {
+    const res = await fetch("/metrics");
+    const data = await res.json();
+    const metricsDiv = document.getElementById("metrics");
+    metricsDiv.innerHTML = "";
+
+    let hasNewData = false;
+    
+    for (let i = 1; i <= 8; i++) {
+      const prodKey = `production_${i}`;
+      let val = data[prodKey] ?? data[`machine_${i}`] ?? "N/A"; // Support both old and new keys
+      
+      // Update production data for charts
+      if (val !== "N/A") {
+        // Get timestamp from payload (assuming it's in the data)
+        let timestamp;
+        if (data.timestamp) {
+          // Convert Unix timestamp to IST
+          timestamp = convertUnixToIST(data.timestamp);
+        } else {
+          // Fallback to current time if no timestamp in payload
+          timestamp = new Date().toLocaleTimeString();
+        }
+        
+        // Only update if the value has changed
+        const lastValue = productionData[prodKey].values.length > 0 
+          ? productionData[prodKey].values[productionData[prodKey].values.length - 1] 
+          : null;
+        
+        if (val !== lastValue) {
+          productionData[prodKey].values.push(val);
+          productionData[prodKey].timestamps.push(timestamp);
+          hasNewData = true;
+          
+          // Keep only the last 20 data points
+          if (productionData[prodKey].values.length > 20) {
+            productionData[prodKey].values.shift();
+            productionData[prodKey].timestamps.shift();
+          }
+        }
+      }
+      
+      const colorClass = machineColors[(i-1) % machineColors.length];
+      
+      metricsDiv.innerHTML += `
+        <div class="metric-card bg-gradient-to-br ${colorClass} text-white p-6 rounded-xl shadow-lg text-center hover:shadow-xl transition-all" onclick="showProductionChart('production_${i}')">
+          <div class="text-lg font-semibold mb-1">Production ${i}</div>
+          <div class="text-3xl font-bold">${val}</div>
+         
+        </div>`;
+    }
+    
+    // Only update charts if we have new data
+    if (hasNewData) {
+      updateCharts();
+    }
+  } catch (error) {
+    console.error("Error fetching metrics:", error);
+  }
+}
+
+// Add this helper function to convert Unix timestamp to IST
+function convertUnixToIST(unixTimestamp) {
+  // Create a new Date object from the Unix timestamp (in seconds)
+  const date = new Date(unixTimestamp * 1000);
+  
+  // Convert to IST (UTC+5:30)
+  const istOffset = 5.5 * 60 * 60 * 1000; // 5.5 hours in milliseconds
+  const istTime = new Date(date.getTime() + istOffset);
+  
+  // Format as HH:MM:SS
+  return istTime.toISOString().substr(11, 8);
+}
+    function showProductionChart(production) {
+      selectedProduction = production;
+      document.getElementById('individual-chart-container').classList.remove('hidden');
+      
+      // Update the individual chart
+      const prodData = productionData[production];
+      individualChart.data.labels = prodData.timestamps;
+      individualChart.data.datasets[0].data = prodData.values;
+      individualChart.data.datasets[0].label = production.replace('_', ' ');
+      individualChart.options.plugins.title.text = `${production.replace('_', ' ')} Metrics`;
+      
+      // Set line color based on production number
+      const prodNum = parseInt(production.split('_')[1]);
+      individualChart.data.datasets[0].borderColor = getComputedStyle(document.documentElement).getPropertyValue(`--color-${['blue', 'green', 'purple', 'yellow', 'red', 'indigo', 'pink', 'teal'][prodNum-1]}-500`);
+      
+      individualChart.update();
+      
+      // Scroll to the individual chart
+      document.getElementById('individual-chart-container').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    async function fetchMessages() {
+      if (!isConnected) return;
+      
+      try {
+        const res = await fetch("/messages");
+        const newMessages = await res.json();
+        
+        // Only add new messages we haven't seen before
+        newMessages.forEach(msg => {
+          if (!allMessages.some(m => m.time === msg.time && m.topic === msg.topic && m.payload === msg.payload)) {
+            allMessages.push(msg);
+          }
+        });
+        
+        // Keep only the last 200 messages
+        if (allMessages.length > 200) {
+          allMessages = allMessages.slice(allMessages.length - 200);
+        }
+        
+        renderLog();
+        updatePagination();
+      } catch (error) {
+        console.error("Error fetching messages:", error);
+      }
+    }
+
+    window.onload = () => {
+      updatePagination();
+      
+      // Add subtle animation to header
+      const header = document.querySelector('header');
+      header.style.transition = 'all 0.3s ease';
+      header.addEventListener('mouseenter', () => {
+        header.style.transform = 'translateY(-2px)';
+        header.style.boxShadow = '0 10px 15px -3px rgba(0, 0, 0, 0.2)';
+      });
+      header.addEventListener('mouseleave', () => {
+        header.style.transform = '';
+        header.style.boxShadow = '';
+      });
+    }
+  </script>
+</body>
+</html>
