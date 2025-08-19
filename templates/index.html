@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>Production Counter</title>
+  <title>Live Production Count Monitor</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
@@ -502,43 +502,78 @@
     }
 
     function renderLog() {
-      const table = document.getElementById("log");
-      table.innerHTML = "";
-      
-      const startIndex = (currentPage - 1) * logsPerPage;
-      const paginatedMessages = allMessages.slice().reverse().slice(startIndex, startIndex + logsPerPage);
-      
-      if (paginatedMessages.length === 0) {
-        table.innerHTML = `
-          <tr>
-            <td colspan="3" class="px-6 py-4 text-center text-sm text-gray-500">No logs available</td>
-          </tr>`;
-        return;
-      }
-      
-      paginatedMessages.forEach((msg, index) => {
-        let payload = msg.payload;
-        try {
-          // Try to pretty-print JSON if payload is JSON
-          const jsonData = JSON.parse(msg.payload);
-          payload = JSON.stringify(jsonData, null, 2);
-        } catch (e) {
-          // If not JSON, use as-is
-        }
-        
-        let row = document.createElement("tr");
-        row.className = `log-row ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`;
-        row.innerHTML = `
-          <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${msg.time}</td>
-          <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 truncate max-w-xs">
-            <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">${msg.topic}</span>
-          </td>
-          <td class="px-6 py-4 text-sm text-gray-500">
-            <pre class="whitespace-pre-wrap break-all font-mono bg-gray-50 p-2 rounded border border-gray-200">${payload}</pre>
-          </td>`;
-        table.appendChild(row);
-      });
+  const table = document.getElementById("log");
+  table.innerHTML = "";
+  
+  const startIndex = (currentPage - 1) * logsPerPage;
+  const paginatedMessages = allMessages.slice().reverse().slice(startIndex, startIndex + logsPerPage);
+  
+  if (paginatedMessages.length === 0) {
+    table.innerHTML = `
+      <tr>
+        <td colspan="3" class="px-6 py-4 text-center text-sm text-gray-500">No logs available</td>
+      </tr>`;
+    return;
+  }
+  
+  paginatedMessages.forEach((msg, index) => {
+    let payload = msg.payload;
+    try {
+      // Try to pretty-print JSON if payload is JSON
+      const jsonData = JSON.parse(msg.payload);
+      payload = JSON.stringify(jsonData, null, 2);
+    } catch (e) {
+      // If not JSON, use as-is
     }
+    
+    // Convert Unix timestamp to IST
+    let logTime;
+    try {
+      // Check if time is already in readable format (from metrics)
+      if (isNaN(msg.time)) {
+        logTime = msg.time;
+      } else {
+        // Convert Unix timestamp to IST
+        logTime = convertUnixToIST(parseInt(msg.time));
+      }
+    } catch (e) {
+      logTime = msg.time; // fallback to original if conversion fails
+    }
+    
+    let row = document.createElement("tr");
+    row.className = `log-row ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`;
+    row.innerHTML = `
+      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${logTime}</td>
+      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 truncate max-w-xs">
+        <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">${msg.topic}</span>
+      </td>
+      <td class="px-6 py-4 text-sm text-gray-500">
+        <pre class="whitespace-pre-wrap break-all font-mono bg-gray-50 p-2 rounded border border-gray-200">${payload}</pre>
+      </td>`;
+    table.appendChild(row);
+  });
+}
+
+// Helper function to convert Unix timestamp to IST
+function convertUnixToIST(unixTimestamp) {
+  // Create a new Date object from the Unix timestamp (in seconds)
+  const date = new Date(unixTimestamp * 1000);
+  
+  // Options for formatting
+  const options = {
+    timeZone: 'Asia/Kolkata',
+    hour12: false,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  };
+  
+  // Format as DD/MM/YYYY, HH:MM:SS IST
+  return date.toLocaleString('en-IN', options) + ' IST';
+}
 
     function updatePagination() {
       const totalPages = Math.ceil(allMessages.length / logsPerPage);
