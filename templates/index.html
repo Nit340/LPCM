@@ -364,47 +364,47 @@
     }
 
     function updateCharts() {
-      if (!overallChart || !individualChart) return;
-      
-      // Update overall chart
-      const labels = [];
-      const datasets = [];
-      
-      // Get the most recent timestamps (use the first production line that has data)
-      const referenceProd = Object.keys(productionData).find(key => productionData[key].timestamps.length > 0);
-      if (referenceProd) {
-        labels.push(...productionData[referenceProd].timestamps);
-      }
-      
-      // Create dataset for each production line
-      Object.keys(productionData).forEach((prod, index) => {
-        if (productionData[prod].values.length > 0) {
-          datasets.push({
-            label: prod.replace('_', ' '),
-            data: productionData[prod].values,
-            borderColor: getComputedStyle(document.documentElement).getPropertyValue(`--color-${['blue', 'green', 'purple', 'yellow', 'red', 'indigo', 'pink', 'teal'][index]}-500`),
-            backgroundColor: getComputedStyle(document.documentElement).getPropertyValue(`--color-${['blue', 'green', 'purple', 'yellow', 'red', 'indigo', 'pink', 'teal'][index]}-100`),
-            borderWidth: 2,
-            tension: 0.1,
-            fill: false
-          });
-        }
+  if (!overallChart || !individualChart) return;
+  
+  // Update overall chart
+  const labels = [];
+  const datasets = [];
+  
+  // Get the most recent timestamps (use the first production line that has data)
+  const referenceProd = Object.keys(productionData).find(key => productionData[key].timestamps.length > 0);
+  if (referenceProd) {
+    labels.push(...productionData[referenceProd].timestamps);
+  }
+  
+  // Create dataset for each production line
+  Object.keys(productionData).forEach((prod, index) => {
+    if (productionData[prod].values.length > 0) {
+      datasets.push({
+        label: prod.replace('_', ' '),
+        data: productionData[prod].values,
+        borderColor: `hsl(${index * 45}, 75%, 50%)`, // Use HSL for distinct colors
+        backgroundColor: `hsl(${index * 45}, 75%, 50%, 0.1)`,
+        borderWidth: 2,
+        tension: 0.1,
+        fill: false
       });
-      
-      overallChart.data.labels = labels;
-      overallChart.data.datasets = datasets;
-      overallChart.update();
-      
-      // Update individual chart if a production is selected
-      if (selectedProduction) {
-        const prodData = productionData[selectedProduction];
-        individualChart.data.labels = prodData.timestamps;
-        individualChart.data.datasets[0].data = prodData.values;
-        individualChart.data.datasets[0].label = selectedProduction.replace('_', ' ');
-        individualChart.options.plugins.title.text = `${selectedProduction.replace('_', ' ')} Metrics`;
-        individualChart.update();
-      }
     }
+  });
+  
+  overallChart.data.labels = labels;
+  overallChart.data.datasets = datasets;
+  overallChart.update();
+  
+  // Update individual chart if a production is selected
+  if (selectedProduction) {
+    const prodData = productionData[selectedProduction];
+    individualChart.data.labels = prodData.timestamps;
+    individualChart.data.datasets[0].data = prodData.values;
+    individualChart.data.datasets[0].label = selectedProduction.replace('_', ' ');
+    individualChart.options.plugins.title.text = `${selectedProduction.replace('_', ' ')} Metrics`;
+    individualChart.update();
+  }
+}
 
     async function disconnectMQTT() {
       if (!isConnected) return;
@@ -518,32 +518,25 @@
   
   paginatedMessages.forEach((msg, index) => {
     let payload = msg.payload;
+    let timestamp = msg.time; // Default to original time if we can't parse
+    
     try {
-      // Try to pretty-print JSON if payload is JSON
+      // Try to parse the payload as JSON
       const jsonData = JSON.parse(msg.payload);
       payload = JSON.stringify(jsonData, null, 2);
-    } catch (e) {
-      // If not JSON, use as-is
-    }
-    
-    // Convert Unix timestamp to IST
-    let logTime;
-    try {
-      // Check if time is already in readable format (from metrics)
-      if (isNaN(msg.time)) {
-        logTime = msg.time;
-      } else {
-        // Convert Unix timestamp to IST
-        logTime = convertUnixToIST(parseInt(msg.time));
+      
+      // If payload has a timestamp, use that and convert to IST
+      if (jsonData.timestamp) {
+        timestamp = convertUnixToIST(jsonData.timestamp);
       }
     } catch (e) {
-      logTime = msg.time; // fallback to original if conversion fails
+      // If not JSON, use as-is
     }
     
     let row = document.createElement("tr");
     row.className = `log-row ${index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}`;
     row.innerHTML = `
-      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${logTime}</td>
+      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${timestamp}</td>
       <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900 truncate max-w-xs">
         <span class="inline-block bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full">${msg.topic}</span>
       </td>
@@ -554,7 +547,7 @@
   });
 }
 
-// Helper function to convert Unix timestamp to IST
+// Update the convertUnixToIST function to include date and time
 function convertUnixToIST(unixTimestamp) {
   // Create a new Date object from the Unix timestamp (in seconds)
   const date = new Date(unixTimestamp * 1000);
@@ -571,8 +564,8 @@ function convertUnixToIST(unixTimestamp) {
     second: '2-digit'
   };
   
-  // Format as DD/MM/YYYY, HH:MM:SS IST
-  return date.toLocaleString('en-IN', options) + ' IST';
+  // Format as DD/MM/YYYY, HH:MM:SS
+  return date.toLocaleString('en-IN', options);
 }
 
     function updatePagination() {
